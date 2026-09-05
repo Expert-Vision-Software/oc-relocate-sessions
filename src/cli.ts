@@ -1,24 +1,27 @@
 import { VERSION } from "./version.js";
 import { CliError } from "./errors.js";
-import type { DbCommandOptions } from "./options.js";
+import type { DbCommandOptions, PlanCommandOptions } from "./options.js";
 import { runDbs } from "./dbs.js";
 import { runList } from "./list.js";
+import { runPlan } from "./plan.js";
 
 const HELP = `oc-relocate v${VERSION} — relocate opencode sessions when a repo changes location
 
 Usage:
   oc-relocate                       Interactive menu (TTY)
   oc-relocate relocate --from <path> --to <path> [--apply]  Perform a relocation
-  oc-relocate plan --from <path> --to <path>                Preview affected sessions
+  oc-relocate plan --from <path> --to <path> [--also-project-tables]
+                                                            Preview affected sessions
   oc-relocate list                                          List sessions in the resolved DB
   oc-relocate dbs                                           List Global DB candidates
   oc-relocate help                                          Show this help
   oc-relocate version                                       Show version
 
 Flags:
-  --db <path>   Target a specific Global DB file
-  --json        Machine-readable output
-  --apply, -y   Perform the write (default is a read-only plan)
+  --db <path>               Target a specific Global DB file
+  --json                    Machine-readable output
+  --apply, -y               Perform the write (default is a read-only plan)
+  --also-project-tables     Include project/workspace rows in the plan (off by default)
 
 Environment:
   OPENCODE_DB   Path to the Global DB (--db takes precedence)
@@ -30,49 +33,88 @@ function printHelp(): void {
   process.stdout.write(HELP);
 }
 
+const BOOLEAN_FLAG_FIELDS = { json: "json", "also-project-tables": "alsoProjectTables" } as const;
+const VALUE_FLAG_FIELDS = { db: "db", from: "from", to: "to" } as const;
+
+type BooleanFlagName = keyof typeof BOOLEAN_FLAG_FIELDS;
+type ValueFlagName = keyof typeof VALUE_FLAG_FIELDS;
+
 interface ParsedFlags {
   db?: string;
   json: boolean;
+  from?: string;
+  to?: string;
+  alsoProjectTables: boolean;
 }
 
 function parseFlags(args: readonly string[]): ParsedFlags {
-  let db: string | undefined;
-  let json = false;
+  const parsed: ParsedFlags = { json: false, alsoProjectTables: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === undefined) break;
-    if (arg === "--json") {
-      json = true;
-    } else if (arg === "--db") {
-      const value = args[i + 1];
-      if (value === undefined || value.startsWith("--")) {
-        throw new CliError("option --db requires a <path> value");
-      }
-      if (value.trim().length === 0) {
-        throw new CliError("option --db requires a non-empty <path> value");
-      }
-      db = value;
-      i++;
-    } else if (arg.startsWith("--db=")) {
-      const value = arg.slice("--db=".length);
-      if (value.trim().length === 0) {
-        throw new CliError("option --db requires a non-empty <path> value");
-      }
-      db = value;
-    } else {
+    if (!arg.startsWith("--") || arg === "--") {
       throw new CliError(`unknown option: ${arg}`);
     }
+    const eq = arg.indexOf("=");
+    const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
+    if (isBooleanFlag(name)) {
+      if (eq !== -1) {
+        throw new CliError(`option --${name} does not take a value`);
+      }
+      parsed[BOOLEAN_FLAG_FIELDS[name]] = true;
+    } else if (isValueFlag(name)) {
+      let value: string | undefined;
+      if (eq === -1) {
+        value = args[i + 1];
+        i++;
+      } else {
+        value = arg.slice(eq + 1);
+      }
+      if (value === undefined || value.startsWith("--")) {
+        throw new CliError(`option --${name} requires a <path> value`);
+      }
+      if (value.trim().length === 0) {
+        throw new CliError(`option --${name} requires a non-empty <path> value`);
+      }
+      parsed[VALUE_FLAG_FIELDS[name]] = value;
+    } else {
+      throw new CliError(`unknown option: --${name}`);
+    }
   }
-  return { db, json };
+  return parsed;
 }
 
-async function runDbCommand(command: "dbs" | "list", args: readonly string[]): Promise<number> {
+function isBooleanFlag(name: string): name is BooleanFlagName {
+  return name in BOOLEAN_FLAG_FIELDS;
+}
+
+function isValueFlag(name: string): name is ValueFlagName {
+  return name in VALUE_FLAG_FIELDS;
+}
+
+async function runCommand(command: "dbs" | "list" | "plan", args: readonly string[]): Promise<number> {
   try {
     const parsed = parseFlags(args);
     if (command === "dbs") {
-      return await runDbs({ json: parsed.json, dbFlag: parsed.db });
+      return await runDbs({ json: parsed.json, dbFlag: parsed.db } satisfies DbCommandOptions);
     }
-    return await runList({ json: parsed.json, dbFlag: parsed.db });
+    if (command === "plan") {
+      if (parsed.from === undefined) {
+        throw new CliError("plan requires --from <path> — the old repo path");
+      }
+      if (parsed.to === undefined) {
+        throw new CliError("plan requires --to <path> — the new repo path");
+      }
+      const planOptions: PlanCommandOptions = {
+        json: parsed.json,
+        dbFlag: parsed.db,
+        from: parsed.from,
+        to: parsed.to,
+        alsoProjectTables: parsed.alsoProjectTables,
+      };
+      return await runPlan(planOptions);
+    }
+    return await runList({ json: parsed.json, dbFlag: parsed.db } satisfies DbCommandOptions);
   } catch (err) {
     if (!(err instanceof CliError)) {
       process.stderr.write(
@@ -108,8 +150,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  if (first === "dbs" || first === "list") {
-    return runDbCommand(first, argv.slice(1));
+  if (first === "dbs" || first === "list" || first === "plan") {
+    return runCommand(first, argv.slice(1));
   }
 
   process.stderr.write(`Unknown command: ${first}\n\n`);

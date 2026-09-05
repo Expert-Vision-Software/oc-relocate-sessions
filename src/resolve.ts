@@ -120,6 +120,15 @@ export async function openGlobalDb(resolution: Resolution): Promise<OpenedGlobal
   return { ...opened, resolution };
 }
 
+export async function openResolvedDb(dbFlag: string | undefined): Promise<OpenedGlobalDb> {
+  const opened = await openGlobalDb(resolveGlobalDb(dbFlag));
+  const warning = walWarning(opened.resolution.path);
+  if (warning !== null) {
+    process.stderr.write(`${warning}\n`);
+  }
+  return opened;
+}
+
 export function walWarning(dbPath: string, threshold: number = WAL_WARN_THRESHOLD_BYTES): string | null {
   const walBytes = siblingSize(dbPath, "-wal");
   if (walBytes < threshold) return null;

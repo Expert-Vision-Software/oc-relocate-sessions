@@ -1,6 +1,6 @@
 import type { DriverDb } from "./driver.js";
 import type { DbCommandOptions } from "./options.js";
-import { openGlobalDb, resolveGlobalDb, walWarning } from "./resolve.js";
+import { openResolvedDb } from "./resolve.js";
 
 interface DirectoryCount {
   directory: string;
@@ -14,15 +14,9 @@ interface ListReport {
 }
 
 export async function runList(opts: DbCommandOptions): Promise<number> {
-  const resolution = resolveGlobalDb(opts.dbFlag);
-  const opened = await openGlobalDb(resolution);
-  const { db } = opened;
+  const opened = await openResolvedDb(opts.dbFlag);
+  const { db, resolution } = opened;
   try {
-    const warning = walWarning(resolution.path);
-    if (warning !== null) {
-      process.stderr.write(`${warning}\n`);
-    }
-
     const directories = readDirectoryCounts(db);
     const totals = {
       projects: readCount(db, "project"),
