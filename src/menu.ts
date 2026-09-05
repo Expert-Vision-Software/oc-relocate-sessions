@@ -54,31 +54,43 @@ function directCommand(args: readonly string[]): string {
   return ["oc-relocate", ...args.map(quoteIfNeeded)].join(" ");
 }
 
-function planRecommendation(dbPath: string, from: string, to: string, alsoProjectTables: boolean): string {
+interface RecommendationInput {
+  dbPath: string;
+  from: string;
+  to: string;
+  alsoProjectTables: boolean;
+}
+
+function recommendation(command: "plan" | "relocate", input: RecommendationInput): string {
   return directCommand([
-    "plan",
+    command,
     "--from",
-    from,
+    input.from,
     "--to",
-    to,
+    input.to,
     "--db",
-    dbPath,
-    ...(alsoProjectTables ? ["--also-project-tables"] : []),
+    input.dbPath,
+    ...(input.alsoProjectTables ? ["--also-project-tables"] : []),
+    ...(command === "relocate" ? ["--apply"] : []),
   ]);
 }
 
-function relocateRecommendation(dbPath: string, from: string, to: string, alsoProjectTables: boolean): string {
-  return directCommand([
-    "relocate",
-    "--from",
-    from,
-    "--to",
-    to,
-    "--db",
-    dbPath,
-    ...(alsoProjectTables ? ["--also-project-tables"] : []),
-    "--apply",
-  ]);
+interface PickOption {
+  value: string;
+  label: string;
+  hint?: string;
+}
+
+async function selectOrManual(message: string, options: PickOption[], manualMessage: string): Promise<string> {
+  if (options.length === 0) {
+    return await askNormalizedPath(manualMessage);
+  }
+  const withManual: PickOption[] = [...options, { value: MANUAL, label: "Enter a path manually…" }];
+  const picked = await ask(p.select({ message, options: withManual }));
+  if (picked === MANUAL) {
+    return await askNormalizedPath(manualMessage);
+  }
+  return picked;
 }
 
 async function pickDb(message: string): Promise<string> {
@@ -93,17 +105,12 @@ async function pickDb(message: string): Promise<string> {
     p.log.info(`Global DB: ${only.path} (channel ${only.channel})`);
     return only.path;
   }
-  const options: { value: string; label: string; hint?: string }[] = candidates.map((candidate) => ({
+  const options: PickOption[] = candidates.map((candidate) => ({
     value: candidate.path,
     label: displayPath(candidate.path),
     hint: `channel ${candidate.channel} · modified ${candidate.mtime}`,
   }));
-  options.push({ value: MANUAL, label: "Enter a path manually…" });
-  const picked = await ask(p.select({ message, options }));
-  if (picked === MANUAL) {
-    return await askNormalizedPath(message);
-  }
-  return picked;
+  return await selectOrManual(message, options, message);
 }
 
 async function seedOldPaths(dbPath: string): Promise<string[]> {
@@ -123,16 +130,8 @@ async function seedOldPaths(dbPath: string): Promise<string[]> {
 async function pickOldPath(dbPath: string): Promise<string> {
   const message = "Step 2/6 · Relocate from which directory?";
   const seeded = await seedOldPaths(dbPath);
-  if (seeded.length === 0) {
-    return await askNormalizedPath(message);
-  }
   const options = seeded.map((directory) => ({ value: directory, label: displayPath(directory) }));
-  options.push({ value: MANUAL, label: "Enter a path manually…" });
-  const picked = await ask(p.select({ message, options }));
-  if (picked === MANUAL) {
-    return await askNormalizedPath(message);
-  }
-  return picked;
+  return await selectOrManual(message, options, message);
 }
 
 function probeNewPathCandidates(from: string): string[] {
@@ -151,17 +150,11 @@ function probeNewPathCandidates(from: string): string[] {
 
 async function pickNewPath(from: string): Promise<string> {
   const message = "Step 3/6 · Relocate to which directory?";
-  const probed = probeNewPathCandidates(from);
-  if (probed.length === 0) {
-    return await askNormalizedPath(message);
-  }
-  const options = probed.map((directory) => ({ value: directory, label: displayPath(directory) }));
-  options.push({ value: MANUAL, label: "Enter a path manually…" });
-  const picked = await ask(p.select({ message, options }));
-  if (picked === MANUAL) {
-    return await askNormalizedPath(message);
-  }
-  return picked;
+  const options = probeNewPathCandidates(from).map((directory) => ({
+    value: directory,
+    label: displayPath(directory),
+  }));
+  return await selectOrManual(message, options, message);
 }
 
 async function relocateFlow(): Promise<number> {
@@ -193,7 +186,7 @@ async function relocateFlow(): Promise<number> {
 
   if (plan.totals.sessions === 0 && !plan.tidyUp) {
     p.log.warn("No sessions match — nothing to relocate.");
-    p.log.message(planRecommendation(dbPath, plan.from, plan.to, alsoProjectTables));
+    p.log.message(recommendation("plan", { dbPath, from: plan.from, to: plan.to, alsoProjectTables }));
     return 0;
   }
 
@@ -205,7 +198,7 @@ async function relocateFlow(): Promise<number> {
   );
   if (!apply) {
     p.log.info("Nothing was changed.");
-    p.log.message(planRecommendation(dbPath, plan.from, plan.to, alsoProjectTables));
+    p.log.message(recommendation("plan", { dbPath, from: plan.from, to: plan.to, alsoProjectTables }));
     return 0;
   }
 
@@ -224,14 +217,14 @@ async function relocateFlow(): Promise<number> {
   } catch (err) {
     spinner.stop("Stopped — nothing was committed if the write failed");
     p.log.error(err instanceof Error ? err.message : String(err));
-    p.log.message(planRecommendation(dbPath, plan.from, plan.to, alsoProjectTables));
+    p.log.message(recommendation("plan", { dbPath, from: plan.from, to: plan.to, alsoProjectTables }));
     return 1;
   }
   spinner.stop("Relocation applied");
 
   if (outcome.kind === "noop") {
     p.log.warn("No sessions match — nothing to relocate.");
-    p.log.message(planRecommendation(dbPath, plan.from, plan.to, alsoProjectTables));
+    p.log.message(recommendation("plan", { dbPath, from: plan.from, to: plan.to, alsoProjectTables }));
     return 0;
   }
 
@@ -246,7 +239,7 @@ async function relocateFlow(): Promise<number> {
     ].join("\n"),
   );
   p.log.message("Run the same relocation directly next time:");
-  p.log.message(relocateRecommendation(dbPath, outcome.paths.from, outcome.paths.to, alsoProjectTables));
+  p.log.message(recommendation("relocate", { dbPath, from: outcome.paths.from, to: outcome.paths.to, alsoProjectTables }));
   return 0;
 }
 

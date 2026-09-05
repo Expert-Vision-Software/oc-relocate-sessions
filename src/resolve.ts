@@ -129,20 +129,13 @@ export async function openResolvedDb(dbFlag: string | undefined): Promise<Opened
   return opened;
 }
 
+export const WAL_ANY_BYTES = 1;
+
 export function walWarning(dbPath: string, threshold: number = WAL_WARN_THRESHOLD_BYTES): string | null {
   const walBytes = sidecarBytes(dbPath, "-wal");
   if (walBytes < threshold) return null;
   return (
-    `warning: WAL sidecar is large (${formatBytes(walBytes)}) at ${dbPath}-wal — recent opencode writes may still sit ` +
-    `in the WAL; quit opencode cleanly so the database is complete`
-  );
-}
-
-export function walSidecarAdvisory(dbPath: string): string | null {
-  const walBytes = sidecarBytes(dbPath, "-wal");
-  if (walBytes <= 0) return null;
-  return (
-    `warning: WAL sidecar present (${formatBytes(walBytes)}) at ${dbPath}-wal — recent opencode writes may still ` +
-    `sit in the WAL; quit opencode cleanly first so the backup is complete`
+    `warning: WAL sidecar present (${formatBytes(walBytes)}) at ${dbPath}-wal — recent opencode writes may still sit ` +
+    `in the WAL; quit opencode cleanly first`
   );
 }

@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { Database } from "bun:sqlite";
-import { readdirSync } from "node:fs";
 import { runCli, runCliInteractive, type InteractiveStep } from "./helpers/spawn-cli.js";
 import { createSyntheticDb } from "./helpers/synthetic-db.js";
 import { createFakeHome, installDb } from "./helpers/data-dir.js";
+import { backupFiles, sessionRows } from "./helpers/db-inspect.js";
+import { nodeMajorVersion } from "./helpers/node-version.js";
 import { VERSION } from "../src/version.js";
 
 const DETECTOR_ENV = "OC_RELOCATE_PROCESS_DETECTOR_OUTPUT";
@@ -24,24 +24,6 @@ function installedDb(): { dbPath: string; env: Record<string, string>; dir: stri
 
 function menuEnv(fake: { env: Record<string, string> }): Record<string, string> {
   return { ...fake.env, OC_RELOCATE_MENU: "1", [DETECTOR_ENV]: "INFO: No tasks are running." };
-}
-
-function backupsIn(dir: string): string[] {
-  return readdirSync(dir).filter((name) => name.includes(".bak-relocate-"));
-}
-
-interface Row {
-  id: string;
-  directory: string;
-}
-
-function queryRows(dbPath: string): Row[] {
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    return db.query("SELECT id, directory FROM session ORDER BY id ASC").all() as Row[];
-  } finally {
-    db.close();
-  }
 }
 
 const APPLY_SCRIPT: InteractiveStep[] = [
@@ -136,11 +118,11 @@ describe("interactive relocate flow", () => {
     expect(stdout).toContain(
       `oc-relocate relocate --from ${FROM} --to ${TO} --db ${fake.dbPath} --apply`,
     );
-    expect(queryRows(fake.dbPath)).toEqual([
+    expect(sessionRows(fake.dbPath)).toEqual([
       { id: "s1", directory: TO },
       { id: "s2", directory: `${TO}/sub` },
     ]);
-    expect(backupsIn(fake.dir)).toHaveLength(1);
+    expect(backupFiles(fake.dir)).toHaveLength(1);
   }, 20000);
 
   test("answering no at the confirm gate leaves the DB untouched and recommends plan", async () => {
@@ -155,11 +137,18 @@ describe("interactive relocate flow", () => {
     expect(stdout).toContain(
       `oc-relocate plan --from ${FROM} --to ${TO} --db ${fake.dbPath}`,
     );
-    expect(backupsIn(fake.dir)).toEqual([]);
-    expect(queryRows(fake.dbPath)).toEqual([
+    expect(backupFiles(fake.dir)).toEqual([]);
+    expect(sessionRows(fake.dbPath)).toEqual([
       { id: "s1", directory: FROM },
       { id: "s2", directory: `${FROM}/sub` },
     ]);
+
+    const printed = stdout.match(/oc-relocate plan [^\r\n]+/);
+    expect(printed).not.toBeNull();
+    const args = printed![0].trim().split(/\s+/).slice(1);
+    const executed = await runCli(args, { env: fake.env });
+    expect(executed.exitCode).toBe(0);
+    expect(executed.stdout).toMatch(/no changes were made/i);
   }, 20000);
 
   test("the applied menu flow and the equivalent direct command produce identical DB state", async () => {
@@ -178,6 +167,25 @@ describe("interactive relocate flow", () => {
     );
     expect(direct.exitCode).toBe(0);
 
-    expect(queryRows(menuDb.dbPath)).toEqual(queryRows(directDb.dbPath));
+    expect(sessionRows(menuDb.dbPath)).toEqual(sessionRows(directDb.dbPath));
+  }, 30000);
+
+  const major = nodeMajorVersion();
+
+  test.skipIf(major === null || major < 24)("guided relocate applies under Node >= 24", async () => {
+    const fake = installedDb();
+    const { exitCode, stdout } = await runCliInteractive([], {
+      env: menuEnv(fake),
+      script: APPLY_SCRIPT,
+      runtime: "node",
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Relocated 2 sessions");
+    expect(sessionRows(fake.dbPath)).toEqual([
+      { id: "s1", directory: TO },
+      { id: "s2", directory: `${TO}/sub` },
+    ]);
+    expect(backupFiles(fake.dir)).toHaveLength(1);
   }, 30000);
 });

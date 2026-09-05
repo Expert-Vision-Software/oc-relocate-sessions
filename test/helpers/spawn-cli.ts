@@ -24,11 +24,14 @@ async function waitFor(predicate: () => boolean, timeoutMs: number, label: strin
 
 export async function runCliInteractive(
   args: string[],
-  opts: { env?: Record<string, string>; script: InteractiveStep[]; timeoutMs?: number } = { script: [] },
+  opts: { env?: Record<string, string>; script: InteractiveStep[]; timeoutMs?: number; runtime?: "default" | "node" } = {
+    script: [],
+  },
 ): Promise<CliResult> {
   const timeoutMs = opts.timeoutMs ?? 10_000;
+  const bin = opts.runtime === "node" ? (Bun.which("node") ?? "node") : process.execPath;
   const proc = Bun.spawn({
-    cmd: [process.execPath, cliPath, ...args],
+    cmd: [bin, cliPath, ...args],
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",

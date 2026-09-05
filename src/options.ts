@@ -1,3 +1,5 @@
+import type { RelocationRequest } from "./relocate.js";
+
 export interface DbCommandOptions {
   json: boolean;
   dbFlag?: string;
@@ -9,7 +11,4 @@ export interface PlanCommandOptions extends DbCommandOptions {
   alsoProjectTables: boolean;
 }
 
-export interface RelocateCommandOptions extends PlanCommandOptions {
-  apply: boolean;
-  force: boolean;
-}
+export interface RelocateCommandOptions extends DbCommandOptions, RelocationRequest {}

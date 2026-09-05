@@ -1,10 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import { Database } from "bun:sqlite";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { runCli } from "./helpers/spawn-cli.js";
 import { createSyntheticDb, type SyntheticDb } from "./helpers/synthetic-db.js";
 import { createFakeHome } from "./helpers/data-dir.js";
+import { backupFiles, queryRows, sessionRows } from "./helpers/db-inspect.js";
 import { nodeMajorVersion } from "./helpers/node-version.js";
 
 const fwd = (value: string): string => value.replaceAll("\\", "/");
@@ -23,7 +23,7 @@ interface RelocateJson {
   force?: boolean;
   planned?: { sessions: number; directories: number };
   changes?: { session: number; projectWorktree?: number; projectSandboxes?: number; projectDirectory?: number; workspace?: number };
-  verify?: { match: boolean };
+  verify?: { applied: number; planned: number };
   directories?: { directory: string; sessions: number }[];
   totals?: { sessions: number; directories: number };
   sessions?: { id: string; projectId: string; directory: string; path: string }[];
@@ -33,10 +33,6 @@ function dbBytes(dbPath: string): Buffer {
   return readFileSync(dbPath);
 }
 
-function backupFiles(dir: string): string[] {
-  return readdirSync(dir).filter((name) => name.includes(".bak-relocate-"));
-}
-
 function seedStandardDb(): ReturnType<typeof createSyntheticDb> {
   const db = createSyntheticDb();
   db.insertSession({ id: "s1", projectId: "p1", directory: "C:/dev/foo" });
@@ -44,19 +40,6 @@ function seedStandardDb(): ReturnType<typeof createSyntheticDb> {
   db.insertSession({ id: "s3", projectId: "p1", directory: "C:/dev/foo/sub" });
   db.insertSession({ id: "s4", projectId: "p2", directory: "C:/dev/unrelated" });
   return db;
-}
-
-function queryRows<T = Record<string, unknown>>(dbPath: string, sql: string): T[] {
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    return db.query(sql).all() as T[];
-  } finally {
-    db.close();
-  }
-}
-
-function sessionRows(dbPath: string): { id: string; directory: string }[] {
-  return queryRows<{ id: string; directory: string }>(dbPath, "SELECT id, directory FROM session ORDER BY id ASC");
 }
 
 const NO_PROCESSES = "INFO: No tasks are running which match the specified criteria.";
@@ -257,7 +240,7 @@ describe("relocate reporting", () => {
     expect(parsed.backup).toMatch(/\.bak-relocate-/);
     expect(parsed.planned).toEqual({ sessions: 3, directories: 2 });
     expect(parsed.changes).toEqual({ session: 3 });
-    expect(parsed.verify).toEqual({ match: true });
+    expect(parsed.verify).toEqual({ applied: 3, planned: 3 });
     expect(parsed.directories).toEqual([
       { directory: "C:/dev/bar", sessions: 2 },
       { directory: "C:/dev/bar/sub", sessions: 1 },
@@ -347,6 +330,24 @@ describe("relocate process guard", () => {
 
     expect(exitCode).toBe(0);
   });
+
+  test.skipIf(process.platform === "win32")(
+    "an unavailable detector warns that the guard was skipped and still applies (POSIX)",
+    async () => {
+      const fakeHome = createFakeHome();
+      const db = seedStandardDb();
+      db.close();
+
+      const { exitCode, stderr } = await runCli(
+        ["relocate", "--db", db.dbPath, "--from", "C:/dev/foo", "--to", "C:/dev/bar", "--apply"],
+        { env: { ...applyEnv(fakeHome), PATH: "" } },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toMatch(/process guard was skipped/);
+      expect(sessionRows(db.dbPath)[0]?.directory).toBe("C:/dev/bar");
+    },
+  );
 
   test("--force overrides the guard with a warning and applies", async () => {
     const fakeHome = createFakeHome();

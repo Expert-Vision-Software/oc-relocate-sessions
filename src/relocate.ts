@@ -12,7 +12,7 @@ import {
   type PlanDirectoryCount,
   type RelocationPlan,
 } from "./plan.js";
-import { openGlobalDb, resolveGlobalDb, walSidecarAdvisory } from "./resolve.js";
+import { openGlobalDb, resolveGlobalDb, walWarning, WAL_ANY_BYTES } from "./resolve.js";
 
 export const PROCESS_DETECTOR_OUTPUT_ENV = "OC_RELOCATE_PROCESS_DETECTOR_OUTPUT";
 
@@ -33,7 +33,11 @@ interface ApplyOutcome {
   backup: string;
   changes: RelocateChanges;
   directoriesAfter: PlanDirectoryCount[];
-  match: boolean;
+}
+
+interface DetectorResult {
+  output: string | null;
+  failure: string | null;
 }
 
 const ESCAPE = "ESCAPE '\\'";
@@ -44,7 +48,7 @@ const PROJECT_SANDBOXES_UPDATE = `UPDATE project SET sandboxes = REPLACE(sandbox
 const PROJECT_DIRECTORY_UPDATE = `UPDATE project_directory SET directory = REPLACE(directory, ?, ?) WHERE directory LIKE ? ${ESCAPE}`;
 const WORKSPACE_UPDATE = `UPDATE workspace SET directory = REPLACE(directory, ?, ?) WHERE directory LIKE ? ${ESCAPE}`;
 
-function realDetectorOutput(): string | null {
+function realDetectorOutput(): DetectorResult {
   const command =
     process.platform === "win32"
       ? ["tasklist", "/FI", "IMAGENAME eq opencode.exe", "/FO", "CSV", "/NH"]
@@ -55,26 +59,38 @@ function realDetectorOutput(): string | null {
       windowsHide: true,
       timeout: 10_000,
     });
-    return typeof result.stdout === "string" ? result.stdout : null;
-  } catch {
-    return null;
+    if (result.error !== undefined) {
+      return { output: null, failure: result.error.message };
+    }
+    return { output: typeof result.stdout === "string" ? result.stdout : null, failure: null };
+  } catch (err) {
+    return { output: null, failure: err instanceof Error ? err.message : String(err) };
   }
 }
 
-function isOpenCodeProcessLine(line: string): boolean {
+function isDetectorHit(line: string): boolean {
   if (/^INFO:/i.test(line)) return false;
   if (/opencode\.exe/i.test(line)) return true;
   return /^\d+$/.test(line);
 }
 
-export function detectOpenCodeProcesses(): ProcessGuard {
-  const faked = process.env[PROCESS_DETECTOR_OUTPUT_ENV];
-  const output = faked !== undefined ? faked : realDetectorOutput();
-  if (output === null) return { running: false, detail: null };
-  const matches = output
+function detectorLines(output: string): string[] {
+  return output
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && isOpenCodeProcessLine(line));
+    .filter((line) => line.length > 0 && isDetectorHit(line));
+}
+
+export function detectOpenCodeProcesses(): ProcessGuard {
+  const faked = process.env[PROCESS_DETECTOR_OUTPUT_ENV];
+  const result: DetectorResult = faked !== undefined ? { output: faked, failure: null } : realDetectorOutput();
+  if (result.failure !== null) {
+    process.stderr.write(
+      `warning: could not check for running opencode processes (${result.failure}) — the process guard was skipped\n`,
+    );
+  }
+  if (result.output === null) return { running: false, detail: null };
+  const matches = detectorLines(result.output);
   if (matches.length === 0) return { running: false, detail: null };
   return { running: true, detail: matches.join(", ") };
 }
@@ -145,7 +161,8 @@ function writeRelocation(
       db.exec("ROLLBACK");
     } catch {}
     throw err;
-  }}
+  }
+}
 
 async function performApply(
   dbPath: string,
@@ -155,7 +172,7 @@ async function performApply(
   force: boolean,
 ): Promise<ApplyOutcome> {
   enforceGuard(force);
-  const advisory = walSidecarAdvisory(dbPath);
+  const advisory = walWarning(dbPath, WAL_ANY_BYTES);
   if (advisory !== null) {
     process.stderr.write(`${advisory}\n`);
   }
@@ -167,7 +184,7 @@ async function performApply(
     try {
       const changes = writeRelocation(opened.db, paths, alsoProjectTables, plannedSessions);
       const directoriesAfter = readDirectoriesAfter(opened.db, paths.to);
-      return { backup, changes, directoriesAfter, match: true };
+      return { backup, changes, directoriesAfter };
     } finally {
       opened.db.close();
     }
@@ -212,7 +229,6 @@ export interface RelocationApplied {
   backup: string;
   changes: RelocateChanges;
   directoriesAfter: PlanDirectoryCount[];
-  match: boolean;
 }
 
 export type RelocationOutcome = RelocationNoop | RelocationApplied;
@@ -250,14 +266,7 @@ export async function executeRelocation(request: RelocationRequest): Promise<Rel
 }
 
 export async function runRelocate(opts: RelocateCommandOptions): Promise<number> {
-  const outcome = await executeRelocation({
-    from: opts.from,
-    to: opts.to,
-    dbFlag: opts.dbFlag,
-    alsoProjectTables: opts.alsoProjectTables,
-    apply: opts.apply,
-    force: opts.force,
-  });
+  const outcome = await executeRelocation(opts);
 
   if (outcome.kind === "noop" && !opts.apply) {
     if (opts.json) {
@@ -283,7 +292,7 @@ export async function runRelocate(opts: RelocateCommandOptions): Promise<number>
             changed: false,
             planned: outcome.plan.totals,
             changes: { session: 0 },
-            verify: { match: true },
+            verify: { applied: 0, planned: outcome.plan.totals.sessions },
           },
           null,
           2,
@@ -308,7 +317,7 @@ export async function runRelocate(opts: RelocateCommandOptions): Promise<number>
           force: opts.force,
           planned: outcome.plan.totals,
           changes: outcome.changes,
-          verify: { match: outcome.match },
+          verify: { applied: outcome.changes.session, planned: outcome.plan.totals.sessions },
           directories: outcome.directoriesAfter,
         },
         null,
