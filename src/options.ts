@@ -8,3 +8,8 @@ export interface PlanCommandOptions extends DbCommandOptions {
   to: string;
   alsoProjectTables: boolean;
 }
+
+export interface RelocateCommandOptions extends PlanCommandOptions {
+  apply: boolean;
+  force: boolean;
+}

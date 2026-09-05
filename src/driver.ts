@@ -1,4 +1,5 @@
 import { CliError } from "./errors.js";
+import { existsSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -33,9 +34,15 @@ function requireSupportedNode(): void {
 }
 
 export async function openDatabase(path: string, opts: { readonly: boolean }): Promise<OpenedDriver> {
+  if (!existsSync(path)) {
+    throw new CliError(`Global DB not found: ${path} — oc-relocate never creates a database`);
+  }
   if (typeof Bun !== "undefined") {
     const { Database } = await import("bun:sqlite");
-    return { db: wrapBunDb(new Database(path, { readonly: opts.readonly, create: false })), driver: "bun:sqlite" };
+    return {
+      db: wrapBunDb(new Database(path, { readonly: opts.readonly, create: !opts.readonly })),
+      driver: "bun:sqlite",
+    };
   }
   requireSupportedNode();
   const { DatabaseSync } = await import("node:sqlite");

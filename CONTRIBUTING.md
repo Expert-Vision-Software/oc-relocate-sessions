@@ -35,6 +35,13 @@ bun test test/cli.test.ts
   copy of a real opencode database, and never point tests at your live DB.
 - Both driver paths matter (`bun:sqlite` under Bun, `node:sqlite` under
   Node >= 24) — see `docs/adr/0001-sqlite-driver-strategy.md`.
+- **Process guard is stubbed at the process boundary**: apply-path tests set
+  `OC_RELOCATE_PROCESS_DETECTOR_OUTPUT` to fake the detector's input (its
+  parsed output), so suites are hermetic even while opencode itself is
+  running on the dev machine.
+- **Interactive flows use scripted stdin**: `runCliInteractive` in
+  `test/helpers/spawn-cli.ts` waits for each `@clack/prompts` render and then
+  pipes the answer (`\r` submit, `y`/`n` confirm, `\x1b[B` down, `\x03` Ctrl-C).
 
 ## Domain vocabulary
 

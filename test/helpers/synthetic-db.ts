@@ -11,6 +11,7 @@ export interface SyntheticDb {
   insertProjectDirectory(entry: { id: string; projectId: string; directory: string }): void;
   insertWorkspace(workspace: { id: string; directory: string }): void;
   query(sql: string): unknown[];
+  exec(sql: string): void;
   close(): void;
 }
 
@@ -76,6 +77,9 @@ export function createSyntheticDb(options: SyntheticDbOptions = {}): SyntheticDb
     },
     query(sql) {
       return db.query(sql).all();
+    },
+    exec(sql) {
+      db.exec(sql);
     },
     close() {
       db.close();
