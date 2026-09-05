@@ -10,10 +10,11 @@ const cliPath = join(import.meta.dir, "..", "..", "dist", "cli.js");
 
 export async function runCli(
   args: string[],
-  opts: { env?: Record<string, string> } = {},
+  opts: { env?: Record<string, string>; runtime?: "default" | "node" } = {},
 ): Promise<CliResult> {
+  const bin = opts.runtime === "node" ? (Bun.which("node") ?? "node") : process.execPath;
   const proc = Bun.spawn({
-    cmd: [process.execPath, cliPath, ...args],
+    cmd: [bin, cliPath, ...args],
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
