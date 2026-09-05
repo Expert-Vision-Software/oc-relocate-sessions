@@ -4,15 +4,7 @@ import { join } from "node:path";
 import { runCli } from "./helpers/spawn-cli.js";
 import { createSyntheticDb } from "./helpers/synthetic-db.js";
 import { createFakeHome, installDb } from "./helpers/data-dir.js";
-
-function nodeMajorVersion(): number | null {
-  const nodeBin = Bun.which("node");
-  if (nodeBin === null) return null;
-  const proc = Bun.spawnSync([nodeBin, "--version"]);
-  const version = proc.stdout.toString().trim();
-  const major = Number.parseInt(version.replace(/^v/, "").split(".")[0] ?? "0", 10);
-  return Number.isNaN(major) ? null : major;
-}
+import { nodeMajorVersion } from "./helpers/node-version.js";
 
 const major = nodeMajorVersion();
 

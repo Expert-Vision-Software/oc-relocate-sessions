@@ -1,6 +1,6 @@
 import type { DriverDb } from "./driver.js";
 import type { PlanCommandOptions } from "./options.js";
-import { openGlobalDb, resolveGlobalDb, walWarning } from "./resolve.js";
+import { openResolvedDb } from "./resolve.js";
 import { displayPath, normalizeRelocationPaths, type NormalizedRelocationPaths } from "./paths.js";
 
 export interface PlanSessionRow {
@@ -15,10 +15,15 @@ export interface PlanDirectoryCount {
   sessions: number;
 }
 
+export interface PlanTidyUpTable {
+  count: number;
+  ids: string[];
+}
+
 export interface PlanTidyUpCounts {
-  project: number;
-  projectDirectory: number;
-  workspace: number;
+  project: PlanTidyUpTable;
+  projectDirectory: PlanTidyUpTable;
+  workspace: PlanTidyUpTable;
 }
 
 export interface RelocationPlan {
@@ -36,14 +41,9 @@ export interface RelocationPlan {
 
 export async function runPlan(opts: PlanCommandOptions): Promise<number> {
   const paths = normalizeRelocationPaths(opts.from, opts.to);
-  const resolution = resolveGlobalDb(opts.dbFlag);
-  const opened = await openGlobalDb(resolution);
-  const { db } = opened;
+  const opened = await openResolvedDb(opts.dbFlag);
+  const { db, resolution } = opened;
   try {
-    const warning = walWarning(resolution.path);
-    if (warning !== null) {
-      process.stderr.write(`${warning}\n`);
-    }
     if (!paths.toExists) {
       process.stderr.write(
         `warning: destination path does not exist on disk: ${displayPath(paths.to)} — ` +
@@ -117,27 +117,30 @@ function groupByDirectory(sessions: PlanSessionRow[]): PlanDirectoryCount[] {
 
 function readTidyUpCounts(db: DriverDb, from: string): PlanTidyUpCounts {
   return {
-    project: countRows(
+    project: readTidyUpTable(
       db,
-      "SELECT COUNT(*) AS count FROM project WHERE worktree LIKE ? ESCAPE '\\' OR sandboxes LIKE ? ESCAPE '\\'",
+      "SELECT id FROM project WHERE worktree LIKE ? ESCAPE '\\' OR sandboxes LIKE ? ESCAPE '\\' ORDER BY id ASC",
       [likePrefix(from), likeContains(from)],
     ),
-    projectDirectory: countRows(
+    projectDirectory: readTidyUpTable(
       db,
-      "SELECT COUNT(*) AS count FROM project_directory WHERE directory LIKE ? ESCAPE '\\'",
+      "SELECT id FROM project_directory WHERE directory LIKE ? ESCAPE '\\' ORDER BY id ASC",
       [likePrefix(from)],
     ),
-    workspace: countRows(
+    workspace: readTidyUpTable(
       db,
-      "SELECT COUNT(*) AS count FROM workspace WHERE directory LIKE ? ESCAPE '\\'",
+      "SELECT id FROM workspace WHERE directory LIKE ? ESCAPE '\\' ORDER BY id ASC",
       [likePrefix(from)],
     ),
   };
 }
 
-function countRows(db: DriverDb, sql: string, params: string[]): number {
-  const first = db.all(sql, params)[0] as { count: unknown } | undefined;
-  return Number(first?.count ?? 0);
+function readTidyUpTable(db: DriverDb, sql: string, params: string[]): PlanTidyUpTable {
+  const rows = db.all(sql, params);
+  return {
+    count: rows.length,
+    ids: rows.map((row) => String((row as Record<string, unknown>).id)),
+  };
 }
 
 function likePrefix(value: string): string {
@@ -190,10 +193,16 @@ function formatTidyUpScope(plan: RelocationPlan): string {
   if (!plan.tidyUp) {
     return "Tidy-up scope (--also-project-tables): off";
   }
+  const tidyUp = plan.tidyUp;
   return [
     "Tidy-up scope (--also-project-tables): on — would also rewrite:",
-    `  project: ${plan.tidyUp.project}`,
-    `  project_directory: ${plan.tidyUp.projectDirectory}`,
-    `  workspace: ${plan.tidyUp.workspace}`,
+    `  project: ${formatTidyUpTable(tidyUp.project)}`,
+    `  project_directory: ${formatTidyUpTable(tidyUp.projectDirectory)}`,
+    `  workspace: ${formatTidyUpTable(tidyUp.workspace)}`,
   ].join("\n");
+}
+
+function formatTidyUpTable(table: PlanTidyUpTable): string {
+  if (table.ids.length === 0) return "0";
+  return `${table.count} (${table.ids.join(", ")})`;
 }

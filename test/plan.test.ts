@@ -4,6 +4,7 @@ import { join, sep } from "node:path";
 import { runCli } from "./helpers/spawn-cli.js";
 import { createSyntheticDb } from "./helpers/synthetic-db.js";
 import { createFakeHome } from "./helpers/data-dir.js";
+import { nodeMajorVersion } from "./helpers/node-version.js";
 
 const fwd = (value: string): string => value.replaceAll("\\", "/");
 const native = (value: string): string => (sep === "\\" ? value.replaceAll("/", "\\") : value);
@@ -19,7 +20,11 @@ interface PlanJson {
   totals: { sessions: number; directories: number };
   sessions: { id: string; projectId: string; directory: string; path: string }[];
   directories: { directory: string; sessions: number }[];
-  tidyUp?: { project: number; projectDirectory: number; workspace: number };
+  tidyUp?: {
+    project: { count: number; ids: string[] };
+    projectDirectory: { count: number; ids: string[] };
+    workspace: { count: number; ids: string[] };
+  };
 }
 
 function dbBytes(dbPath: string): Buffer {
@@ -156,7 +161,7 @@ describe("plan --json shape", () => {
   });
 });
 
-describe("plan dry-run safety", () => {
+describe("plan read-only safety", () => {
   test("plan leaves the DB byte-identical", async () => {
     const fakeHome = createFakeHome();
     const db = createSyntheticDb();
@@ -260,7 +265,11 @@ describe("plan tidy-up scope (--also-project-tables)", () => {
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout) as PlanJson;
     expect(parsed.alsoProjectTables).toBe(true);
-    expect(parsed.tidyUp).toEqual({ project: 1, projectDirectory: 1, workspace: 1 });
+    expect(parsed.tidyUp).toEqual({
+      project: { count: 1, ids: ["p1"] },
+      projectDirectory: { count: 1, ids: ["pd1"] },
+      workspace: { count: 1, ids: ["w1"] },
+    });
     expect(dbBytes(db.dbPath).equals(before)).toBe(true);
   });
 
@@ -402,5 +411,36 @@ describe("plan for an empty match set", () => {
     expect(parsed.totals).toEqual({ sessions: 0, directories: 0 });
     expect(parsed.sessions).toEqual([]);
     expect(parsed.directories).toEqual([]);
+  });
+});
+
+describe("plan under the Node driver (node:sqlite)", () => {
+  const major = nodeMajorVersion();
+
+  test.skipIf(major === null || major < 24)("same plan behavior under Node >= 24", async () => {
+    const fakeHome = createFakeHome();
+    const db = createSyntheticDb();
+    db.insertProject({ id: "p1", worktree: "C:/dev/foo" });
+    db.insertSession({ id: "s1", projectId: "p1", directory: "C:/dev/foo" });
+    db.insertSession({ id: "s2", projectId: "p1", directory: "C:/dev/foo/sub" });
+    db.close();
+
+    const before = dbBytes(db.dbPath);
+    const { exitCode, stdout, stderr } = await runCli(
+      ["plan", "--db", db.dbPath, "--from", "C:\\dev\\foo\\", "--to", db.dir, "--json"],
+      { env: fakeHome.env, runtime: "node" },
+    );
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    const parsed = JSON.parse(stdout) as PlanJson;
+    expect(parsed.from).toBe("C:/dev/foo");
+    expect(parsed.toExists).toBe(true);
+    expect(parsed.totals).toEqual({ sessions: 2, directories: 2 });
+    expect(parsed.directories).toEqual([
+      { directory: "C:/dev/foo", sessions: 1 },
+      { directory: "C:/dev/foo/sub", sessions: 1 },
+    ]);
+    expect(dbBytes(db.dbPath).equals(before)).toBe(true);
   });
 });

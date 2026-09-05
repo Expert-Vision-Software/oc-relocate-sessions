@@ -33,8 +33,11 @@ function printHelp(): void {
   process.stdout.write(HELP);
 }
 
-const BOOLEAN_FLAGS = new Set(["json", "also-project-tables"]);
-const VALUE_FLAGS = new Set(["db", "from", "to"]);
+const BOOLEAN_FLAG_FIELDS = { json: "json", "also-project-tables": "alsoProjectTables" } as const;
+const VALUE_FLAG_FIELDS = { db: "db", from: "from", to: "to" } as const;
+
+type BooleanFlagName = keyof typeof BOOLEAN_FLAG_FIELDS;
+type ValueFlagName = keyof typeof VALUE_FLAG_FIELDS;
 
 interface ParsedFlags {
   db?: string;
@@ -54,13 +57,12 @@ function parseFlags(args: readonly string[]): ParsedFlags {
     }
     const eq = arg.indexOf("=");
     const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
-    if (BOOLEAN_FLAGS.has(name)) {
+    if (isBooleanFlag(name)) {
       if (eq !== -1) {
         throw new CliError(`option --${name} does not take a value`);
       }
-      if (name === "json") parsed.json = true;
-      else parsed.alsoProjectTables = true;
-    } else if (VALUE_FLAGS.has(name)) {
+      parsed[BOOLEAN_FLAG_FIELDS[name]] = true;
+    } else if (isValueFlag(name)) {
       let value: string | undefined;
       if (eq === -1) {
         value = args[i + 1];
@@ -74,14 +76,20 @@ function parseFlags(args: readonly string[]): ParsedFlags {
       if (value.trim().length === 0) {
         throw new CliError(`option --${name} requires a non-empty <path> value`);
       }
-      if (name === "db") parsed.db = value;
-      else if (name === "from") parsed.from = value;
-      else parsed.to = value;
+      parsed[VALUE_FLAG_FIELDS[name]] = value;
     } else {
       throw new CliError(`unknown option: --${name}`);
     }
   }
   return parsed;
+}
+
+function isBooleanFlag(name: string): name is BooleanFlagName {
+  return name in BOOLEAN_FLAG_FIELDS;
+}
+
+function isValueFlag(name: string): name is ValueFlagName {
+  return name in VALUE_FLAG_FIELDS;
 }
 
 async function runCommand(command: "dbs" | "list" | "plan", args: readonly string[]): Promise<number> {
