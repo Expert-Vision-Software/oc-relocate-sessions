@@ -61,15 +61,15 @@ export function discoverDbCandidates(dataDir: string = opencodeDataDir()): DbCan
       mtimeMs: stats.mtimeMs,
       mtime: new Date(stats.mtimeMs).toISOString(),
       sizeBytes: stats.size,
-      walBytes: siblingSize(path, "-wal"),
-      shmBytes: siblingSize(path, "-shm"),
+      walBytes: sidecarBytes(path, "-wal"),
+      shmBytes: sidecarBytes(path, "-shm"),
     });
   }
   candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
   return candidates;
 }
 
-function siblingSize(dbPath: string, suffix: string): number {
+export function sidecarBytes(dbPath: string, suffix: string): number {
   try {
     return statSync(dbPath + suffix).size;
   } catch {
@@ -129,11 +129,13 @@ export async function openResolvedDb(dbFlag: string | undefined): Promise<Opened
   return opened;
 }
 
+export const WAL_ANY_BYTES = 1;
+
 export function walWarning(dbPath: string, threshold: number = WAL_WARN_THRESHOLD_BYTES): string | null {
-  const walBytes = siblingSize(dbPath, "-wal");
+  const walBytes = sidecarBytes(dbPath, "-wal");
   if (walBytes < threshold) return null;
   return (
-    `warning: WAL sidecar is large (${formatBytes(walBytes)}) at ${dbPath}-wal — recent opencode writes may still sit ` +
-    `in the WAL; quit opencode cleanly so the database is complete`
+    `warning: WAL sidecar present (${formatBytes(walBytes)}) at ${dbPath}-wal — recent opencode writes may still sit ` +
+    `in the WAL; quit opencode cleanly first`
   );
 }

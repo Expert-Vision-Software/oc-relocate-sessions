@@ -143,7 +143,7 @@ function readTidyUpTable(db: DriverDb, sql: string, params: string[]): PlanTidyU
   };
 }
 
-function likePrefix(value: string): string {
+export function likePrefix(value: string): string {
   return `${escapeLike(value)}%`;
 }
 
@@ -151,7 +151,7 @@ function likeContains(value: string): string {
   return `%${escapeLike(value)}%`;
 }
 
-function escapeLike(value: string): string {
+export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
@@ -159,7 +159,15 @@ function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function formatTextPlan(plan: RelocationPlan): string {
+export function formatTextPlan(plan: RelocationPlan, closingNote: string = DEFAULT_PLAN_CLOSING): string {
+  const lines = formatPlanBody(plan);
+  lines.push(closingNote);
+  return `${lines.join("\n")}\n`;
+}
+
+export const DEFAULT_PLAN_CLOSING = "No changes were made; run 'relocate' to perform this relocation.";
+
+export function formatPlanBody(plan: RelocationPlan): string[] {
   const lines = [
     `Global DB: ${plan.db}`,
     "Relocation plan (read-only): nothing has been changed",
@@ -185,8 +193,7 @@ function formatTextPlan(plan: RelocationPlan): string {
     }
   }
   lines.push("", formatTidyUpScope(plan));
-  lines.push("No changes were made; run 'relocate' to perform this relocation.");
-  return `${lines.join("\n")}\n`;
+  return lines;
 }
 
 function formatTidyUpScope(plan: RelocationPlan): string {

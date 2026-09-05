@@ -1,39 +1,18 @@
 import { VERSION } from "./version.js";
 import { CliError } from "./errors.js";
-import type { DbCommandOptions, PlanCommandOptions } from "./options.js";
+import type { DbCommandOptions, PlanCommandOptions, RelocateCommandOptions } from "./options.js";
 import { runDbs } from "./dbs.js";
 import { runList } from "./list.js";
 import { runPlan } from "./plan.js";
+import { runRelocate } from "./relocate.js";
+import { printHelp } from "./help.js";
 
-const HELP = `oc-relocate v${VERSION} — relocate opencode sessions when a repo changes location
-
-Usage:
-  oc-relocate                       Interactive menu (TTY)
-  oc-relocate relocate --from <path> --to <path> [--apply]  Perform a relocation
-  oc-relocate plan --from <path> --to <path> [--also-project-tables]
-                                                            Preview affected sessions
-  oc-relocate list                                          List sessions in the resolved DB
-  oc-relocate dbs                                           List Global DB candidates
-  oc-relocate help                                          Show this help
-  oc-relocate version                                       Show version
-
-Flags:
-  --db <path>               Target a specific Global DB file
-  --json                    Machine-readable output
-  --apply, -y               Perform the write (default is a read-only plan)
-  --also-project-tables     Include project/workspace rows in the plan (off by default)
-
-Environment:
-  OPENCODE_DB   Path to the Global DB (--db takes precedence)
-
-Bare invocation without a TTY prints this help and exits 1.
-`;
-
-function printHelp(): void {
-  process.stdout.write(HELP);
-}
-
-const BOOLEAN_FLAG_FIELDS = { json: "json", "also-project-tables": "alsoProjectTables" } as const;
+const BOOLEAN_FLAG_FIELDS = {
+  json: "json",
+  "also-project-tables": "alsoProjectTables",
+  apply: "apply",
+  force: "force",
+} as const;
 const VALUE_FLAG_FIELDS = { db: "db", from: "from", to: "to" } as const;
 
 type BooleanFlagName = keyof typeof BOOLEAN_FLAG_FIELDS;
@@ -45,13 +24,24 @@ interface ParsedFlags {
   from?: string;
   to?: string;
   alsoProjectTables: boolean;
+  apply: boolean;
+  force: boolean;
 }
 
 function parseFlags(args: readonly string[]): ParsedFlags {
-  const parsed: ParsedFlags = { json: false, alsoProjectTables: false };
+  const parsed: ParsedFlags = {
+    json: false,
+    alsoProjectTables: false,
+    apply: false,
+    force: false,
+  };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === undefined) break;
+    if (arg === "-y") {
+      parsed.apply = true;
+      continue;
+    }
     if (!arg.startsWith("--") || arg === "--") {
       throw new CliError(`unknown option: ${arg}`);
     }
@@ -92,9 +82,18 @@ function isValueFlag(name: string): name is ValueFlagName {
   return name in VALUE_FLAG_FIELDS;
 }
 
-async function runCommand(command: "dbs" | "list" | "plan", args: readonly string[]): Promise<number> {
+async function runCommand(
+  command: "dbs" | "list" | "plan" | "relocate",
+  args: readonly string[],
+): Promise<number> {
   try {
     const parsed = parseFlags(args);
+    if (command !== "relocate" && (parsed.apply || parsed.force)) {
+      throw new CliError(
+        `${command} is read-only and does not accept ${parsed.apply ? "--apply" : "--force"} — ` +
+          `use 'relocate' to perform a write`,
+      );
+    }
     if (command === "dbs") {
       return await runDbs({ json: parsed.json, dbFlag: parsed.db } satisfies DbCommandOptions);
     }
@@ -113,6 +112,24 @@ async function runCommand(command: "dbs" | "list" | "plan", args: readonly strin
         alsoProjectTables: parsed.alsoProjectTables,
       };
       return await runPlan(planOptions);
+    }
+    if (command === "relocate") {
+      if (parsed.from === undefined) {
+        throw new CliError("relocate requires --from <path> — the old repo path");
+      }
+      if (parsed.to === undefined) {
+        throw new CliError("relocate requires --to <path> — the new repo path");
+      }
+      const relocateOptions: RelocateCommandOptions = {
+        json: parsed.json,
+        dbFlag: parsed.db,
+        from: parsed.from,
+        to: parsed.to,
+        alsoProjectTables: parsed.alsoProjectTables,
+        apply: parsed.apply,
+        force: parsed.force,
+      };
+      return await runRelocate(relocateOptions);
     }
     return await runList({ json: parsed.json, dbFlag: parsed.db } satisfies DbCommandOptions);
   } catch (err) {
@@ -141,16 +158,18 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (first === undefined) {
-    process.stderr.write(
-      process.stdin.isTTY
-        ? "Interactive menu is not implemented yet (planned for slice 5). Use --help for direct commands.\n\n"
-        : "No arguments given; expected a subcommand.\n\n",
-    );
+    const menuRequested = process.env.OC_RELOCATE_MENU;
+    const menuForced = menuRequested !== undefined && menuRequested !== "" && menuRequested !== "0";
+    if (process.stdin.isTTY || menuForced) {
+      const { runMenu } = await import("./menu.js");
+      return runMenu();
+    }
+    process.stderr.write("No arguments given; expected a subcommand.\n\n");
     printHelp();
     return 1;
   }
 
-  if (first === "dbs" || first === "list" || first === "plan") {
+  if (first === "dbs" || first === "list" || first === "plan" || first === "relocate") {
     return runCommand(first, argv.slice(1));
   }
 

@@ -349,7 +349,7 @@ describe("plan argument validation", () => {
     expect(stderr).toMatch(/--to/);
   });
 
-  test("unknown options are rejected (plan never accepts --apply)", async () => {
+  test("plan rejects --apply (write flags belong to relocate)", async () => {
     const fakeHome = createFakeHome();
     const db = createSyntheticDb();
     db.close();
@@ -360,7 +360,7 @@ describe("plan argument validation", () => {
     );
 
     expect(exitCode).toBe(1);
-    expect(stderr).toMatch(/unknown option: --apply/);
+    expect(stderr).toMatch(/plan is read-only and does not accept --apply/);
   });
 });
 
