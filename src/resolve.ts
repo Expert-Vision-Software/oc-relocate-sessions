@@ -84,15 +84,22 @@ function rejectMemory(value: string, origin: string): void {
   );
 }
 
+function explicitResolution(
+  value: string,
+  source: "flag" | "env",
+  origin: string,
+): Resolution {
+  rejectMemory(value, origin);
+  return { path: value, source, channel: channelForDbFile(value) ?? "unknown" };
+}
+
 export function resolveGlobalDb(flagValue?: string): Resolution {
   if (flagValue !== undefined && flagValue.trim().length > 0) {
-    rejectMemory(flagValue, "--db");
-    return { path: flagValue, source: "flag", channel: channelForDbFile(flagValue) ?? "unknown" };
+    return explicitResolution(flagValue, "flag", "--db");
   }
   const envValue = process.env.OPENCODE_DB;
   if (envValue !== undefined && envValue.trim().length > 0) {
-    rejectMemory(envValue, "OPENCODE_DB");
-    return { path: envValue, source: "env", channel: channelForDbFile(envValue) ?? "unknown" };
+    return explicitResolution(envValue, "env", "OPENCODE_DB");
   }
   const newest = discoverDbCandidates()[0];
   if (newest === undefined) {

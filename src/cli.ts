@@ -1,5 +1,6 @@
 import { VERSION } from "./version.js";
 import { CliError } from "./errors.js";
+import type { DbCommandOptions } from "./options.js";
 import { runDbs } from "./dbs.js";
 import { runList } from "./list.js";
 
@@ -34,7 +35,7 @@ interface ParsedFlags {
   json: boolean;
 }
 
-function parseFlags(args: readonly string[]): ParsedFlags | string {
+function parseFlags(args: readonly string[]): ParsedFlags {
   let db: string | undefined;
   let json = false;
   for (let i = 0; i < args.length; i++) {
@@ -44,26 +45,30 @@ function parseFlags(args: readonly string[]): ParsedFlags | string {
       json = true;
     } else if (arg === "--db") {
       const value = args[i + 1];
-      if (value === undefined) return "option --db requires a <path> value";
+      if (value === undefined || value.startsWith("--")) {
+        throw new CliError("option --db requires a <path> value");
+      }
+      if (value.trim().length === 0) {
+        throw new CliError("option --db requires a non-empty <path> value");
+      }
       db = value;
       i++;
     } else if (arg.startsWith("--db=")) {
-      db = arg.slice("--db=".length);
+      const value = arg.slice("--db=".length);
+      if (value.trim().length === 0) {
+        throw new CliError("option --db requires a non-empty <path> value");
+      }
+      db = value;
     } else {
-      return `unknown option: ${arg}`;
+      throw new CliError(`unknown option: ${arg}`);
     }
   }
   return { db, json };
 }
 
 async function runDbCommand(command: "dbs" | "list", args: readonly string[]): Promise<number> {
-  const parsed = parseFlags(args);
-  if (typeof parsed === "string") {
-    process.stderr.write(`error: ${parsed}\n\n`);
-    printHelp();
-    return 1;
-  }
   try {
+    const parsed = parseFlags(args);
     if (command === "dbs") {
       return await runDbs({ json: parsed.json, dbFlag: parsed.db });
     }

@@ -20,7 +20,7 @@ export interface OpenedDriver {
 
 const MIN_NODE_MAJOR = 24;
 
-export function nodeMajorVersion(): number {
+function nodeMajorVersion(): number {
   return Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
 }
 

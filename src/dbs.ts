@@ -1,13 +1,9 @@
+import type { DbCommandOptions } from "./options.js";
 import type { Resolution } from "./resolve.js";
 import { discoverDbCandidates, opencodeDataDir, resolveGlobalDb } from "./resolve.js";
 import { formatBytes } from "./format.js";
 
-export interface DbsOptions {
-  json: boolean;
-  dbFlag?: string;
-}
-
-export async function runDbs(opts: DbsOptions): Promise<number> {
+export async function runDbs(opts: DbCommandOptions): Promise<number> {
   const resolution = resolveGlobalDb(opts.dbFlag);
   const candidates = discoverDbCandidates();
   const dataDir = opencodeDataDir();

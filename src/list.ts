@@ -1,10 +1,6 @@
 import type { DriverDb } from "./driver.js";
+import type { DbCommandOptions } from "./options.js";
 import { openGlobalDb, resolveGlobalDb, walWarning } from "./resolve.js";
-
-export interface ListOptions {
-  json: boolean;
-  dbFlag?: string;
-}
 
 interface DirectoryCount {
   directory: string;
@@ -17,7 +13,7 @@ interface ListReport {
   directories: DirectoryCount[];
 }
 
-export async function runList(opts: ListOptions): Promise<number> {
+export async function runList(opts: DbCommandOptions): Promise<number> {
   const resolution = resolveGlobalDb(opts.dbFlag);
   const opened = await openGlobalDb(resolution);
   const { db } = opened;

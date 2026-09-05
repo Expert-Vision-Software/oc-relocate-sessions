@@ -193,4 +193,32 @@ describe("No-create guard", () => {
     expect(stderr).toContain(fakeHome.dataDir);
     expect(stderr).toMatch(/no Global DB/i);
   });
+
+  test("dbs with no candidates errors with the searched directory", async () => {
+    const fakeHome = createFakeHome();
+
+    const { exitCode, stderr } = await runCli(["dbs"], { env: fakeHome.env });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain(fakeHome.dataDir);
+    expect(stderr).toMatch(/no Global DB/i);
+  });
+
+  test("--db followed by a flag is a usage error, not a path", async () => {
+    const fakeHome = createFakeHome();
+
+    const { exitCode, stderr } = await runCli(["list", "--db", "--json"], { env: fakeHome.env });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toMatch(/--db requires a <path> value/);
+  });
+
+  test("--db with an empty value is a usage error", async () => {
+    const fakeHome = createFakeHome();
+
+    const { exitCode, stderr } = await runCli(["list", "--db", ""], { env: fakeHome.env });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toMatch(/non-empty <path>/);
+  });
 });
