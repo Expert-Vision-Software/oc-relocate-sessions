@@ -1,0 +1,48 @@
+{
+  "name": "oc-relocate",
+  "version": "0.5.0",
+  "description": "Relocate opencode coding-agent sessions when a repository moves or is cloned to a new local path.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Expert Vision Software <support@expertvision.software>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Expert-Vision-Software/oc-relocate-sessions.git"
+  },
+  "homepage": "https://github.com/Expert-Vision-Software/oc-relocate-sessions#readme",
+  "bugs": "https://github.com/Expert-Vision-Software/oc-relocate-sessions/issues",
+  "keywords": [
+    "opencode",
+    "move opencode sessions",
+    "relocate opencode sessions",
+    "repo moved",
+    "fresh clone",
+    "new path",
+    "opencode sqlite database",
+    "npx cli",
+    "bunx cli"
+  ],
+  "bin": {
+    "oc-relocate": "dist/cli.js",
+    "oc-relocate-sessions": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=24",
+    "bun": ">=1.2.0"
+  },
+  "scripts": {
+    "build": "bun build ./src/cli.ts --outdir ./dist --target bun --format esm --banner \"#!/usr/bin/env node\"",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@types/bun": "^1.4.1",
+    "typescript": "~5.9.3"
+  }
+}

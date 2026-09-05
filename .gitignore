@@ -1,4 +1,6 @@
 node_modules/
+dist/
+*.bak-relocate-*
 Thumbs.db
 Desktop.ini
 .DS_Store
