@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WAL warning: non-fatal stderr warning when the `-wal` sidecar of the resolved DB is >= 1 MiB.
 - `dbs` subcommand: discovered DB candidates with path, channel, mtime, size and WAL size; the resolved default is marked; `--json` supported.
 - `list` subcommand: read-only listing of projects/sessions in the resolved DB with counts grouped by directory; `--json` supported.
+- `plan` subcommand: read-only Relocation preview — affected session rows and per-directory counts for `--from`/`--to`; `--json` supported. Path normalization (absolutize, backslashes → forward slashes, strip trailing slash) with `from === to` refused and a non-fatal warning when `--to` does not exist on disk. Optional `--also-project-tables` (default OFF) extends the preview with the project/workspace rows a Tidy-up would rewrite. Plan output never writes anything.
 
 ## [0.5.0] - 2026-09-05
 
