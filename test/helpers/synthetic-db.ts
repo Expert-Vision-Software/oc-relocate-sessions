@@ -14,10 +14,18 @@ export interface SyntheticDb {
   close(): void;
 }
 
-export function createSyntheticDb(): SyntheticDb {
+export interface SyntheticDbOptions {
+  wal?: boolean;
+}
+
+export function createSyntheticDb(options: SyntheticDbOptions = {}): SyntheticDb {
   const dir = mkdtempSync(join(tmpdir(), "oc-relocate-test-"));
   const dbPath = join(dir, "opencode.db");
   const db = new Database(dbPath);
+
+  if (options.wal) {
+    db.exec(`PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;`);
+  }
 
   db.exec(`
     CREATE TABLE session (
