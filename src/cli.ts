@@ -36,12 +36,17 @@ export function main(argv: readonly string[]): number {
     return 0;
   }
 
-  if (first === undefined && !process.stdin.isTTY) {
+  if (first === undefined) {
+    process.stderr.write(
+      process.stdin.isTTY
+        ? "Interactive menu is not implemented yet (planned for slice 5). Use --help for direct commands.\n\n"
+        : "No arguments given; expected a subcommand.\n\n",
+    );
     printHelp();
     return 1;
   }
 
-  process.stderr.write(`Unknown command: ${first ?? "(none)"}\n\n`);
+  process.stderr.write(`Unknown command: ${first}\n\n`);
   printHelp();
   return 1;
 }

@@ -36,6 +36,7 @@
     "bun": ">=1.2.0"
   },
   "scripts": {
+    "dev": "bun run src/cli.ts",
     "build": "bun build ./src/cli.ts --outdir ./dist --target bun --format esm --banner \"#!/usr/bin/env node\"",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
