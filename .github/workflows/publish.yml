@@ -168,12 +168,17 @@ jobs:
       # Prerelease tags prove the publish mechanics without touching npm.
       - name: Dry-run publish (prerelease tag)
         if: steps.duplicate.outputs.exists == 'false' && steps.version.outputs.prerelease == 'true'
-        run: npm publish --dry-run
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # npm refuses prereleases without an explicit dist-tag.
+          npm publish --dry-run --tag prerelease
 
       - name: Publish with provenance (stable)
         if: steps.duplicate.outputs.exists == 'false' && steps.version.outputs.prerelease == 'false'
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           if [ -z "$NPM_TOKEN" ]; then
             echo "::error::NPM_TOKEN secret is not configured. See CONTRIBUTING.md (Releasing) for the setup checklist."
@@ -182,7 +187,11 @@ jobs:
           # Writing the token to ~/.npmrc is the only auth form that works
           # reliably with both classic and granular tokens in Actions.
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-          npm publish --provenance --access public
+          EXTRA=""
+          case "$VERSION" in
+            *-*) EXTRA="--tag prerelease" ;;
+          esac
+          npm publish --provenance --access public $EXTRA
 
   release:
     name: Create GitHub Release
