@@ -154,11 +154,15 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if npm view "oc-relocate@$VERSION" version >/dev/null 2>&1; then
+          if npm view "oc-relocate@$VERSION" version >/dev/null 2>/tmp/npm-view.err; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "oc-relocate@$VERSION is already on npm - skipping publish."
-          else
+          elif grep -q "E404" /tmp/npm-view.err; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::npm view failed for oc-relocate@$VERSION; cannot check for duplicates safely."
+            cat /tmp/npm-view.err
+            exit 1
           fi
 
       - name: Build
@@ -178,7 +182,6 @@ jobs:
         if: steps.duplicate.outputs.exists == 'false' && steps.version.outputs.prerelease == 'false'
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           if [ -z "$NPM_TOKEN" ]; then
             echo "::error::NPM_TOKEN secret is not configured. See CONTRIBUTING.md (Releasing) for the setup checklist."
@@ -187,11 +190,9 @@ jobs:
           # Writing the token to ~/.npmrc is the only auth form that works
           # reliably with both classic and granular tokens in Actions.
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-          EXTRA=""
-          case "$VERSION" in
-            *-*) EXTRA="--tag prerelease" ;;
-          esac
-          npm publish --provenance --access public $EXTRA
+          # This step only runs for stable versions; a prerelease version
+          # always takes the dry-run branch above (which sets --tag).
+          npm publish --provenance --access public
 
   release:
     name: Create GitHub Release
