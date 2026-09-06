@@ -1,5 +1,14 @@
 # oc-relocate
 
+<!-- SEO keywords: opencode, move opencode sessions, relocate opencode sessions, repo moved, repo renamed, fresh clone new path, opencode sqlite database, opencode session history, npx cli, bunx cli, cross-platform cli -->
+
+[![npm](https://img.shields.io/npm/v/oc-relocate)](https://www.npmjs.com/package/oc-relocate)
+[![CI](https://github.com/Expert-Vision-Software/oc-relocate-sessions/actions/workflows/publish.yml/badge.svg)](https://github.com/Expert-Vision-Software/oc-relocate-sessions/actions/workflows/publish.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![node](https://img.shields.io/badge/node-%3E%3D24-brightgreen)
+![bun](https://img.shields.io/badge/bun-%E2%89%A51.2-brightgreen)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20WSL-lightgrey)
+
 **Move opencode agent sessions when your repo changes location.**
 
 `oc-relocate` is a small CLI that relocates opencode sessions after a repository's
