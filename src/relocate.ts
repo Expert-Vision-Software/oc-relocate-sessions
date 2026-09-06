@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync } from "node:fs";
 import { CliError } from "./errors.js";
 import { openDatabase, type DriverDb } from "./driver.js";
+import { writeErr, writeOut } from "./output.js";
 import type { RelocateCommandOptions } from "./options.js";
 import { displayPath, normalizeRelocationPaths, type NormalizedRelocationPaths } from "./paths.js";
 import {
@@ -92,7 +93,7 @@ export function detectOpenCodeProcesses(): ProcessGuard {
         ? { output: faked, failure: null }
         : realDetectorOutput();
   if (result.failure !== null) {
-    process.stderr.write(
+    writeErr(
       `warning: could not check for running opencode processes (${result.failure}) — the process guard was skipped\n`,
     );
   }
@@ -135,7 +136,7 @@ function enforceGuard(force: boolean): void {
         `or rerun with --force to proceed anyway`,
     );
   }
-  process.stderr.write(
+  writeErr(
     `warning: opencode appears to be running (${guard.detail}) — --force overrode the process guard; ` +
       `concurrent writes may corrupt the Global DB\n`,
   );
@@ -181,7 +182,7 @@ async function performApply(
   enforceGuard(force);
   const advisory = walWarning(dbPath, WAL_ANY_BYTES);
   if (advisory !== null) {
-    process.stderr.write(`${advisory}\n`);
+    writeErr(`${advisory}\n`);
   }
 
   const backup = backupPathFor(dbPath);
@@ -252,7 +253,7 @@ export async function executeRelocation(request: RelocationRequest): Promise<Rel
   }
 
   if (!paths.toExists) {
-    process.stderr.write(
+    writeErr(
       `warning: destination path does not exist on disk: ${displayPath(paths.to)} — ` +
         `sessions would point at a path that is not there yet\n`,
     );
@@ -277,10 +278,10 @@ export async function runRelocate(opts: RelocateCommandOptions): Promise<number>
 
   if (outcome.kind === "noop" && !opts.apply) {
     if (opts.json) {
-      process.stdout.write(`${JSON.stringify(outcome.plan, null, 2)}\n`);
+      writeOut(`${JSON.stringify(outcome.plan, null, 2)}\n`);
       return 0;
     }
-    process.stdout.write(
+    writeOut(
       formatTextPlan(outcome.plan, "No changes were made; rerun with --apply to perform this relocation."),
     );
     return 0;
@@ -289,7 +290,7 @@ export async function runRelocate(opts: RelocateCommandOptions): Promise<number>
   if (outcome.kind === "noop") {
     const message = `No sessions match ${displayPath(outcome.paths.from)} — nothing to relocate.`;
     if (opts.json) {
-      process.stdout.write(
+      writeOut(
         `${JSON.stringify(
           {
             db: outcome.db,
@@ -307,12 +308,12 @@ export async function runRelocate(opts: RelocateCommandOptions): Promise<number>
       );
       return 0;
     }
-    process.stdout.write(`${message}\n`);
+    writeOut(`${message}\n`);
     return 0;
   }
 
   if (opts.json) {
-    process.stdout.write(
+    writeOut(
       `${JSON.stringify(
         {
           db: outcome.db,
@@ -360,6 +361,6 @@ export async function runRelocate(opts: RelocateCommandOptions): Promise<number>
         `workspace ${outcome.changes.workspace ?? 0}`,
     );
   }
-  process.stdout.write(`${lines.join("\n")}\n`);
+  writeOut(`${lines.join("\n")}\n`);
   return 0;
 }

@@ -1,6 +1,7 @@
 import type { DriverDb } from "./driver.js";
 import type { DbCommandOptions } from "./options.js";
 import { openResolvedDb } from "./resolve.js";
+import { writeOut } from "./output.js";
 
 interface DirectoryCount {
   directory: string;
@@ -26,10 +27,10 @@ export async function runList(opts: DbCommandOptions): Promise<number> {
     const report: ListReport = { db: resolution.path, totals, directories };
 
     if (opts.json) {
-      process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      writeOut(`${JSON.stringify(report, null, 2)}\n`);
       return 0;
     }
-    process.stdout.write(formatTextReport(report));
+    writeOut(formatTextReport(report));
     return 0;
   } finally {
     db.close();

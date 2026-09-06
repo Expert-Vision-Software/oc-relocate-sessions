@@ -6,6 +6,7 @@ import { runList } from "./list.js";
 import { runPlan } from "./plan.js";
 import { runRelocate } from "./relocate.js";
 import { printHelp } from "./help.js";
+import { flushOutput, writeErr, writeOut } from "./output.js";
 
 const BOOLEAN_FLAG_FIELDS = {
   json: "json",
@@ -134,12 +135,12 @@ async function runCommand(
     return await runList({ json: parsed.json, dbFlag: parsed.db } satisfies DbCommandOptions);
   } catch (err) {
     if (!(err instanceof CliError)) {
-      process.stderr.write(
+      writeErr(
         `error: failed to read the Global DB (${err instanceof Error ? err.message : String(err)})\n`,
       );
       return 1;
     }
-    process.stderr.write(`error: ${err.message}\n`);
+    writeErr(`error: ${err.message}\n`);
     return 1;
   }
 }
@@ -153,7 +154,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (first === "--version" || first === "-v" || first === "version") {
-    process.stdout.write(`${VERSION}\n`);
+    writeOut(`${VERSION}\n`);
     return 0;
   }
 
@@ -164,7 +165,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       const { runMenu } = await import("./menu.js");
       return runMenu();
     }
-    process.stderr.write("No arguments given; expected a subcommand.\n\n");
+    writeErr("No arguments given; expected a subcommand.\n\n");
     printHelp();
     return 1;
   }
@@ -173,22 +174,15 @@ export async function main(argv: readonly string[]): Promise<number> {
     return runCommand(first, argv.slice(1));
   }
 
-  process.stderr.write(`Unknown command: ${first}\n\n`);
+  writeErr(`Unknown command: ${first}\n\n`);
   printHelp();
   return 1;
 }
 
-function drain(stream: { write: (chunk: string, cb?: () => void) => unknown }): Promise<void> {
-  return new Promise((resolve) => {
-    stream.write("", () => resolve());
-  });
-}
-
 if (import.meta.main) {
   const code = await main(process.argv.slice(2));
-  // Streams queue writes in order, so these callbacks fire only after every
-  // earlier chunk reached the OS. Without this, a large --json report piped
-  // to another process can be truncated when process.exit cuts the loop.
-  await Promise.all([drain(process.stdout), drain(process.stderr)]);
+  // Await the tracked stdout/stderr writes: process.exit() would otherwise
+  // discard buffered output, truncating a large piped --json report.
+  await flushOutput();
   process.exit(code);
 }

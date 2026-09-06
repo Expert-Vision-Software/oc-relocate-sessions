@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { CliError } from "./errors.js";
 import { formatBytes } from "./format.js";
 import { openDatabase, type OpenedDriver } from "./driver.js";
+import { writeErr } from "./output.js";
 
 const CHANNEL_PATTERN = /^opencode(?:-(.+))?\.db$/;
 export const DEFAULT_CHANNEL = "stable";
@@ -124,7 +125,7 @@ export async function openResolvedDb(dbFlag: string | undefined): Promise<Opened
   const opened = await openGlobalDb(resolveGlobalDb(dbFlag));
   const warning = walWarning(opened.resolution.path);
   if (warning !== null) {
-    process.stderr.write(`${warning}\n`);
+    writeErr(`${warning}\n`);
   }
   return opened;
 }

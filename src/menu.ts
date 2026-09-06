@@ -5,6 +5,7 @@ import { openDatabase } from "./driver.js";
 import { CliError } from "./errors.js";
 import { printHelp } from "./help.js";
 import { runList } from "./list.js";
+import { writeOut } from "./output.js";
 import { displayPath, normalizePathInput, normalizeRelocationPaths } from "./paths.js";
 import { computePlan, formatPlanBody } from "./plan.js";
 import {
@@ -271,7 +272,7 @@ export async function runMenu(): Promise<number> {
       } else if (action === "help") {
         printHelp();
       } else {
-        process.stdout.write(`${VERSION}\n`);
+        writeOut(`${VERSION}\n`);
       }
       if (!process.stdin.isTTY) break;
     }

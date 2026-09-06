@@ -1,6 +1,7 @@
 import type { DriverDb } from "./driver.js";
 import type { PlanCommandOptions } from "./options.js";
 import { openResolvedDb } from "./resolve.js";
+import { writeErr, writeOut } from "./output.js";
 import { displayPath, normalizeRelocationPaths, type NormalizedRelocationPaths } from "./paths.js";
 
 export interface PlanSessionRow {
@@ -45,7 +46,7 @@ export async function runPlan(opts: PlanCommandOptions): Promise<number> {
   const { db, resolution } = opened;
   try {
     if (!paths.toExists) {
-      process.stderr.write(
+      writeErr(
         `warning: destination path does not exist on disk: ${displayPath(paths.to)} — ` +
           `sessions would point at a path that is not there yet\n`,
       );
@@ -54,10 +55,10 @@ export async function runPlan(opts: PlanCommandOptions): Promise<number> {
     const plan = computePlan(db, paths, opts.alsoProjectTables, resolution.path);
 
     if (opts.json) {
-      process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
+      writeOut(`${JSON.stringify(plan, null, 2)}\n`);
       return 0;
     }
-    process.stdout.write(formatTextPlan(plan));
+    writeOut(formatTextPlan(plan));
     return 0;
   } finally {
     db.close();

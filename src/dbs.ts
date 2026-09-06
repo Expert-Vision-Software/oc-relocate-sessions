@@ -2,6 +2,7 @@ import type { DbCommandOptions } from "./options.js";
 import type { Resolution } from "./resolve.js";
 import { discoverDbCandidates, opencodeDataDir, resolveGlobalDb } from "./resolve.js";
 import { formatBytes } from "./format.js";
+import { writeOut } from "./output.js";
 
 export async function runDbs(opts: DbCommandOptions): Promise<number> {
   const resolution = resolveGlobalDb(opts.dbFlag);
@@ -9,7 +10,7 @@ export async function runDbs(opts: DbCommandOptions): Promise<number> {
   const dataDir = opencodeDataDir();
 
   if (opts.json) {
-    process.stdout.write(
+    writeOut(
       `${JSON.stringify({ dataDir, resolved: resolution, candidates }, null, 2)}\n`,
     );
     return 0;
@@ -30,7 +31,7 @@ export async function runDbs(opts: DbCommandOptions): Promise<number> {
     lines.push("");
   }
   lines.push(`Resolved Global DB: ${resolution.path} (${sourceLabel(resolution)})`);
-  process.stdout.write(`${lines.join("\n")}\n`);
+  writeOut(`${lines.join("\n")}\n`);
   return 0;
 }
 

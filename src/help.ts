@@ -1,4 +1,5 @@
 import { VERSION } from "./version.js";
+import { writeOut } from "./output.js";
 
 export const HELP = `oc-relocate v${VERSION} — relocate opencode sessions when a repo changes location
 
@@ -27,5 +28,5 @@ Bare invocation without a TTY prints this help and exits 1.
 `;
 
 export function printHelp(): void {
-  process.stdout.write(HELP);
+  writeOut(HELP);
 }
