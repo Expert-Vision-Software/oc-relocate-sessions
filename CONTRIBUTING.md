@@ -67,9 +67,13 @@ no binary artifact).
 1. Create an npm granular publish token at
    <https://www.npmjs.com/settings/YOUR-USER/tokens/granular-access-tokens/new> —
    package `oc-relocate`, permission "Read and write".
-2. Add it as the repository secret `NPM_TOKEN`
-   (Settings → Secrets and variables → Actions). Tokens expire — if a publish
-   fails with 403/404, regenerate the token and re-paste the secret.
+2. Provide it as the `NPM_TOKEN` secret, either:
+   - Organization secret (used by this repo): Org Settings → Secrets and
+     variables → Actions, with this repo included in its repository access; or
+   - Repository secret: Settings → Secrets and variables → Actions →
+     New repository secret.
+   Tokens expire — if a publish fails with 403/404, regenerate the token and
+   update the secret.
 3. Check Settings → Actions → General → Workflow permissions is set to
    "Read and write permissions" (the release job needs it).
 
