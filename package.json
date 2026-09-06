@@ -1,7 +1,7 @@
 {
   "name": "oc-relocate",
   "version": "0.5.0",
-  "description": "Relocate opencode coding-agent sessions when a repository moves or is cloned to a new local path.",
+  "description": "Move and relocate opencode sessions when a repository's local path changes: repo moved or renamed, or a fresh clone at a new path.",
   "type": "module",
   "license": "MIT",
   "author": "Expert Vision Software <support@expertvision.software>",
