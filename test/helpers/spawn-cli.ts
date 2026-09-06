@@ -22,14 +22,23 @@ async function waitFor(predicate: () => boolean, timeoutMs: number, label: strin
   throw new Error(`interactive CLI step timed out waiting for: ${label}`);
 }
 
+export type CliRuntime = "default" | "node";
+
+export function resolveRuntimeBin(runtime: CliRuntime = "default"): string {
+  if (runtime === "node" || process.env.OC_RELOCATE_TEST_RUNTIME === "node") {
+    return Bun.which("node") ?? "node";
+  }
+  return process.execPath;
+}
+
 export async function runCliInteractive(
   args: string[],
-  opts: { env?: Record<string, string>; script: InteractiveStep[]; timeoutMs?: number; runtime?: "default" | "node" } = {
+  opts: { env?: Record<string, string>; script: InteractiveStep[]; timeoutMs?: number; runtime?: CliRuntime } = {
     script: [],
   },
 ): Promise<CliResult> {
   const timeoutMs = opts.timeoutMs ?? 10_000;
-  const bin = opts.runtime === "node" ? (Bun.which("node") ?? "node") : process.execPath;
+  const bin = resolveRuntimeBin(opts.runtime);
   const proc = Bun.spawn({
     cmd: [bin, cliPath, ...args],
     stdin: "pipe",
@@ -70,9 +79,9 @@ export async function runCliInteractive(
 
 export async function runCli(
   args: string[],
-  opts: { env?: Record<string, string>; runtime?: "default" | "node"; cwd?: string; stdin?: string } = {},
+  opts: { env?: Record<string, string>; runtime?: CliRuntime; cwd?: string; stdin?: string } = {},
 ): Promise<CliResult> {
-  const bin = opts.runtime === "node" ? (Bun.which("node") ?? "node") : process.execPath;
+  const bin = resolveRuntimeBin(opts.runtime);
   const proc = Bun.spawn({
     cmd: [bin, cliPath, ...args],
     cwd: opts.cwd,

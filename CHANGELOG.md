@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Release automation (`.github/workflows/publish.yml`): `v*` tag push triggers the CI matrix (the test suite under both `bun:sqlite` and `node:sqlite` via `OC_RELOCATE_TEST_RUNTIME`), an npm version-duplicate check, a provenance publish, and a GitHub Release; prerelease-style tags (e.g. `v0.5.0-rc.1`) run the release path with `npm publish --dry-run` so the path can be proven without publishing; manual dispatch validates CI only by default. `CONTRIBUTING.md` documents the `NPM_TOKEN` setup and release flow.
+
+### Added
+
 - `relocate` subcommand implementing the guarded Apply pipeline: validation → DB resolution → running-opencode process guard (`tasklist` / `pgrep`, overridable with `--force`) → timestamped backup (`<db>.bak-relocate-<ISO timestamp>`, byte-faithful) → transactional `BEGIN IMMEDIATE`/`COMMIT` prefix-scoped `REPLACE` rewrite → in-transaction verification (applied vs planned counts) → report grouped by directory. Read-only plan by default; `--apply`/`-y` performs the write. Optional `--also-project-tables` Tidy-up rewrites `project.worktree`, `project.sandboxes` (JSON array), `project_directory.directory` and `workspace.directory`. Any mid-pipeline failure rolls back completely and prints the backup path. `--json` supported.
 - Interactive menu (`@clack/prompts`) on bare TTY invocation: **Relocate** (staged wizard — DB resolve/pick from discovery, old path seeded from `project_directory`/`project.worktree` rows with manual fallback, disk-probed new-path candidates, live Plan preview, explicit confirm gate, Backup → Apply → verify summary, Command recommendation printing the exact equivalent direct command), **Inspect** (read-only browse reusing `list`), **Help** and **Version**. Ctrl-C exits cleanly at any prompt; every menu action maps 1:1 to an existing subcommand (Args parity). Set `OC_RELOCATE_MENU=1` to open the menu without a TTY.
 - Global DB resolution with the documented precedence: `--db` flag → `OPENCODE_DB` env → newest `opencode.db` / `opencode-<channel>.db` match under the platform data dir (newest by mtime wins).

@@ -1,0 +1,257 @@
+# Publishes oc-relocate to npm and cuts the GitHub Release.
+#
+# Triggers:
+#   - Push a v* tag     -> full release path (CI matrix -> publish -> GitHub Release)
+#   - workflow_dispatch -> validation only by default (CI matrix + version checks);
+#                          untick dry_run to really publish package.json's version
+#
+# ── Maintainer wizard: first-time setup checklist ────────────────────────────
+#  [ ] 1. Create an npm granular publish token:
+#           https://www.npmjs.com/settings/<your-user>/tokens/granular-access-tokens/new
+#         - Packages and scopes: "oc-relocate" (or "All packages" you own)
+#         - Permissions: "Read and write"
+#  [ ] 2. Add the repo secret:
+#           GitHub -> Settings -> Secrets and variables -> Actions -> New repository secret
+#           Name:  NPM_TOKEN
+#           Value: <the token from step 1>
+#         (Tokens expire - when a publish 403s/404s, regenerate and re-paste.)
+#  [ ] 3. Settings -> Actions -> General -> Workflow permissions:
+#         "Read and write permissions" (needed to create the GitHub Release).
+#  [ ] 4. Cut a real release:
+#         - Add a `## [X.Y.Z] - YYYY-MM-DD` section to CHANGELOG.md
+#         - Set package.json version to X.Y.Z, commit
+#         - git tag vX.Y.Z && git push origin vX.Y.Z
+#  [ ] 5. Prove the release path without publishing a real version:
+#           git tag v0.5.0-rc.1 && git push origin v0.5.0-rc.1
+#         (Prerelease tags run everything but pass --dry-run to npm publish,
+#          so nothing reaches the registry.)
+#  [ ] 6. Validate CI only: Actions -> Publish -> Run workflow (keep dry_run on).
+#
+# Retry a failed release:
+#   gh release delete vX.Y.Z --yes
+#   git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z
+#   fix the cause, then re-create and push the tag.
+#   (The duplicate check below skips already-published versions so re-runs stay
+#   green - if the version actually went out, bump the version and re-tag.)
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Validation only (skip npm publish and GitHub Release)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Test (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: bun:sqlite
+            test_runtime: default
+          - label: node:sqlite (node 24)
+            test_runtime: node
+    env:
+      # Flips the test helper's default spawn runtime so the same suite
+      # exercises node:sqlite (see test/helpers/spawn-cli.ts).
+      OC_RELOCATE_TEST_RUNTIME: ${{ matrix.test_runtime }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Build
+        run: bun run build
+      - name: Test
+        run: bun test
+
+  publish:
+    name: Publish to npm
+    needs: ci
+    # Tag pushes always run. Manual dispatch runs only when dry_run is
+    # unchecked - then it publishes package.json's version for real, so
+    # prefer tagging.
+    if: github.event_name == 'push' || inputs.dry_run == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required by --provenance (OIDC attestation)
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          case "$VERSION" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing oc-relocate@$VERSION"
+
+      # A stable tag must line up with package.json, or a forgotten bump
+      # would silently publish the wrong version.
+      - name: Guard stable tags against package.json drift
+        if: github.event_name == 'push' && steps.version.outputs.prerelease == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "$VERSION" ]; then
+            echo "::error::Tag v$VERSION does not match package.json version $PKG_VERSION. Bump package.json and CHANGELOG.md, commit, then re-tag."
+            exit 1
+          fi
+
+      # Prerelease/test tags (v0.5.0-rc.1 style) pack the tag version, so they
+      # can never collide with the real package.json version.
+      - name: Point prerelease tags at the tag version
+        if: steps.version.outputs.prerelease == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npm pkg set version="$VERSION"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Re-running a tag after a partial failure must stay green: an
+      # already-published version skips the publish steps instead of failing.
+      - name: Check npm for a duplicate version
+        id: duplicate
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "oc-relocate@$VERSION" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "oc-relocate@$VERSION is already on npm - skipping publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.duplicate.outputs.exists == 'false'
+        run: bun run build
+
+      # Prerelease tags prove the publish mechanics without touching npm.
+      - name: Dry-run publish (prerelease tag)
+        if: steps.duplicate.outputs.exists == 'false' && steps.version.outputs.prerelease == 'true'
+        run: npm publish --dry-run
+
+      - name: Publish with provenance (stable)
+        if: steps.duplicate.outputs.exists == 'false' && steps.version.outputs.prerelease == 'false'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured. See CONTRIBUTING.md (Releasing) for the setup checklist."
+            exit 1
+          fi
+          # Writing the token to ~/.npmrc is the only auth form that works
+          # reliably with both classic and granular tokens in Actions.
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --provenance --access public
+
+  release:
+    name: Create GitHub Release
+    needs: [ci, publish]
+    # Tag pushes only: a dispatch has no tag to release (and this job is
+    # skipped whenever publish was skipped, e.g. a dry-run dispatch or a
+    # failed publish).
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Extract release notes from CHANGELOG.md
+        if: needs.publish.outputs.prerelease == 'false'
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+          const version = process.env.VERSION;
+          const content = fs.readFileSync("CHANGELOG.md", "utf8");
+          const sections = content.split(/(?=^## )/m);
+          let found = false;
+          let notes = "";
+          for (const section of sections) {
+            const m = section.match(/^## \[([^\]]+)\].*?-\s*(\d{4}-\d{2}-\d{2})/s);
+            if (m && m[1].replace(/^v/, "") === version) {
+              notes = section.replace(/^## \[^\]]+\].*?-\s*\d{4}-\d{2}-\d{2}\n/, "").trim();
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            console.error(
+              "No CHANGELOG.md section for version " + version +
+                ". Add a '## [" + version + "] - YYYY-MM-DD' section, then re-tag.",
+            );
+            process.exit(1);
+          }
+          fs.writeFileSync("RELEASE_NOTES.md", notes);
+          EOF
+
+      # No binary artifact: the npm tarball is the artifact.
+      - name: Create GitHub Release (stable, notes from CHANGELOG.md)
+        if: needs.publish.outputs.prerelease == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release (prerelease, notes from commits)
+        if: needs.publish.outputs.prerelease == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
