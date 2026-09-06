@@ -15,6 +15,7 @@ import {
 import { openGlobalDb, resolveGlobalDb, walWarning, WAL_ANY_BYTES } from "./resolve.js";
 
 export const PROCESS_DETECTOR_OUTPUT_ENV = "OC_RELOCATE_PROCESS_DETECTOR_OUTPUT";
+export const PROCESS_DETECTOR_ERROR_ENV = "OC_RELOCATE_PROCESS_DETECTOR_ERROR";
 
 interface ProcessGuard {
   running: boolean;
@@ -83,7 +84,13 @@ function detectorLines(output: string): string[] {
 
 export function detectOpenCodeProcesses(): ProcessGuard {
   const faked = process.env[PROCESS_DETECTOR_OUTPUT_ENV];
-  const result: DetectorResult = faked !== undefined ? { output: faked, failure: null } : realDetectorOutput();
+  const fakedError = process.env[PROCESS_DETECTOR_ERROR_ENV];
+  const result: DetectorResult =
+    fakedError !== undefined
+      ? { output: null, failure: fakedError }
+      : faked !== undefined
+        ? { output: faked, failure: null }
+        : realDetectorOutput();
   if (result.failure !== null) {
     process.stderr.write(
       `warning: could not check for running opencode processes (${result.failure}) — the process guard was skipped\n`,

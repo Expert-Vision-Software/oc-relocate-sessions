@@ -39,9 +39,10 @@ bun test test/cli.test.ts
   `OC_RELOCATE_TEST_RUNTIME=node bun test` (needs Node >= 24 on PATH); the
   publish workflow's CI matrix runs exactly these two legs.
 - **Process guard is stubbed at the process boundary**: apply-path tests set
-  `OC_RELOCATE_PROCESS_DETECTOR_OUTPUT` to fake the detector's input (its
-  parsed output), so suites are hermetic even while opencode itself is
-  running on the dev machine.
+  `OC_RELOCATE_PROCESS_DETECTOR_OUTPUT` to fake the detector's parsed output,
+  or `OC_RELOCATE_PROCESS_DETECTOR_ERROR` to fake detector unavailability
+  (the guard-was-skipped path), so suites are hermetic even while opencode
+  itself is running on the dev machine.
 - **Interactive flows use scripted stdin**: `runCliInteractive` in
   `test/helpers/spawn-cli.ts` waits for each `@clack/prompts` render and then
   pipes the answer (`\r` submit, `y`/`n` confirm, `\x1b[B` down, `\x03` Ctrl-C).

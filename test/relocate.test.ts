@@ -12,6 +12,7 @@ const native = (value: string): string => (sep === "\\" ? value.replaceAll("/", 
 const joined = (base: string, ...parts: string[]): string => fwd(join(base, ...parts));
 
 const DETECTOR_ENV = "OC_RELOCATE_PROCESS_DETECTOR_OUTPUT";
+const DETECTOR_ERROR_ENV = "OC_RELOCATE_PROCESS_DETECTOR_ERROR";
 
 interface RelocateJson {
   db: string;
@@ -331,23 +332,21 @@ describe("relocate process guard", () => {
     expect(exitCode).toBe(0);
   });
 
-  test.skipIf(process.platform === "win32")(
-    "an unavailable detector warns that the guard was skipped and still applies (POSIX)",
-    async () => {
-      const fakeHome = createFakeHome();
-      const db = seedStandardDb();
-      db.close();
+  test("an unavailable detector warns that the guard was skipped and still applies", async () => {
+    const fakeHome = createFakeHome();
+    const db = seedStandardDb();
+    db.close();
 
-      const { exitCode, stderr } = await runCli(
-        ["relocate", "--db", db.dbPath, "--from", "C:/dev/foo", "--to", "C:/dev/bar", "--apply"],
-        { env: { ...applyEnv(fakeHome), PATH: "" } },
-      );
+    const { exitCode, stderr } = await runCli(
+      ["relocate", "--db", db.dbPath, "--from", "C:/dev/foo", "--to", "C:/dev/bar", "--apply"],
+      { env: { ...applyEnv(fakeHome), [DETECTOR_ERROR_ENV]: "spawn pgrep ENOENT" } },
+    );
 
-      expect(exitCode).toBe(0);
-      expect(stderr).toMatch(/process guard was skipped/);
-      expect(sessionRows(db.dbPath)[0]?.directory).toBe("C:/dev/bar");
-    },
-  );
+    expect(exitCode).toBe(0);
+    expect(stderr).toMatch(/spawn pgrep ENOENT/);
+    expect(stderr).toMatch(/process guard was skipped/);
+    expect(sessionRows(db.dbPath)[0]?.directory).toBe("C:/dev/bar");
+  });
 
   test("--force overrides the guard with a warning and applies", async () => {
     const fakeHome = createFakeHome();
