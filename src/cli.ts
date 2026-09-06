@@ -178,7 +178,17 @@ export async function main(argv: readonly string[]): Promise<number> {
   return 1;
 }
 
+function drain(stream: { write: (chunk: string, cb?: () => void) => unknown }): Promise<void> {
+  return new Promise((resolve) => {
+    stream.write("", () => resolve());
+  });
+}
+
 if (import.meta.main) {
   const code = await main(process.argv.slice(2));
+  // Streams queue writes in order, so these callbacks fire only after every
+  // earlier chunk reached the OS. Without this, a large --json report piped
+  // to another process can be truncated when process.exit cuts the loop.
+  await Promise.all([drain(process.stdout), drain(process.stderr)]);
   process.exit(code);
 }
